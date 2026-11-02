@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { spawnSync } from 'child_process';
 import * as path from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
 import { DocumentService } from '../services/document-service';
@@ -8,6 +9,20 @@ import { PersistenceService } from '../services/persistence-service';
 import { logger } from '../services/logger';
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Windows consoles default to the legacy OEM code page (GBK on zh-CN), which
+ * renders UTF-8 JSON logs as mojibake. Switching the shared console to UTF-8
+ * keeps log output readable; it is a best-effort cosmetic fix.
+ */
+function ensureUtf8Console(): void {
+  if (process.platform !== 'win32') return;
+  try {
+    spawnSync('chcp', ['65001'], { shell: true, stdio: 'ignore', windowsHide: true });
+  } catch {
+    // Ignore: logging still works, only the console rendering may differ.
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -57,6 +72,7 @@ function initializeServices() {
 }
 
 app.whenReady().then(() => {
+  ensureUtf8Console();
   initializeServices();
   createWindow();
 

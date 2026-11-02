@@ -2,6 +2,7 @@ import { QAResponse, QAHistory, Citation } from '../shared/types';
 import { PersistenceService } from './persistence-service';
 import { IndexingService } from './indexing-service';
 import { logger } from './logger';
+import { scoreText, tokenize } from './text-match';
 
 const SERVICE = 'qa-service';
 const QA_HISTORY_FILE = 'qa-history.json';
@@ -13,39 +14,44 @@ const MOCK_PATTERNS: Array<{
   excerpt: string;
 }> = [
   {
-    keywords: ['design', 'architecture', 'pattern'],
+    keywords: ['design', 'architecture', 'pattern', '架构', '设计', '分层'],
     answer: 'The system uses a layered architecture with clear boundaries between the main process, preload scripts, and renderer. Each layer communicates through typed IPC channels, and the services layer handles business logic independently of the UI.',
     excerpt: 'The system uses a layered architecture with clear boundaries',
   },
   {
-    keywords: ['import', 'document', 'file'],
+    keywords: ['import', 'document', 'file', '导入', '文档', '文件'],
     answer: 'Documents are imported by copying the source file to the local data directory. The system extracts text content and creates metadata including title, filename, size, and import timestamp. After import, documents can be indexed for search.',
     excerpt: 'Documents are imported by copying the source file',
   },
   {
-    keywords: ['index', 'chunk', 'search'],
+    keywords: ['index', 'chunk', 'search', '索引', '分块', '切分'],
     answer: 'The indexing pipeline splits documents into chunks of approximately 500 characters at paragraph boundaries. Each chunk includes metadata like character count and word count. The index enables grounded Q&A with citations pointing to specific document sections.',
     excerpt: 'The indexing pipeline splits documents into chunks',
   },
   {
-    keywords: ['retrieval', 'search', 'query'],
+    keywords: ['retrieval', 'search', 'query', '检索', '搜索', '查询'],
     answer: 'Retrieval works by matching query keywords against indexed chunks. The system ranks chunks by keyword overlap and returns the most relevant excerpts as citations alongside the generated answer.',
     excerpt: 'Retrieval works by matching query keywords against indexed chunks',
   },
   {
-    keywords: ['meeting', 'notes', 'summary'],
+    keywords: ['meeting', 'notes', 'summary', '会议', '纪要', '总结'],
     answer: 'The meeting summary indicates that the team discussed implementing a retrieval-augmented generation pipeline. Key decisions included using local chunk storage and citation-based verification to ensure answer accuracy.',
     excerpt: 'The team discussed implementing a retrieval-augmented generation pipeline',
   },
   {
-    keywords: ['logging', 'debug', 'observe', 'monitor'],
+    keywords: ['logging', 'debug', 'observe', 'monitor', '日志', '调试', '监控'],
     answer: 'The application uses structured JSON logging throughout all services. Each log entry includes a timestamp, log level, service name, and optional data payload. This enables runtime observability and debugging of the full document lifecycle.',
     excerpt: 'The application uses structured JSON logging throughout all services',
   },
   {
-    keywords: ['feedback', 'rating', 'quality'],
+    keywords: ['feedback', 'rating', 'quality', '反馈', '评分', '质量'],
     answer: 'Users can provide positive or negative feedback on Q&A responses. Feedback is stored alongside the question and answer in a dedicated feedback log. This data can be used to improve answer quality over time.',
     excerpt: 'Users can provide positive or negative feedback on Q&A responses',
+  },
+  {
+    keywords: ['hermes', '自构建', '学习导师', '导师', 'ai学习导师'],
+    answer: '这份 PRD 描述 Hermes 自构建「AI 学习导师」系统：以文档为知识源，完成导入、分块与索引后提供带引用的问答，并把执行边界、状态与验证交给 harness 管理。',
+    excerpt: 'Hermes 自构建「AI 学习导师」系统 PRD',
   },
 ];
 
@@ -69,19 +75,21 @@ export class QaService {
 
     if (chunks.length > 0) {
       // Find relevant chunks using keyword matching
-      const questionWords = question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const questionTokens = tokenize(question);
       const scored = chunks.map(chunk => {
         const contentLower = chunk.content.toLowerCase();
-        const score = questionWords.reduce(
-          (acc, word) => acc + (contentLower.includes(word) ? 1 : 0),
-          0
-        );
-        return { chunk, score };
+        const matched = questionTokens.filter(token => contentLower.includes(token));
+        return {
+          chunk,
+          score: scoreText(questionTokens, chunk.content),
+          matched,
+        };
       });
 
-      // Take top 2 relevant chunks as citations
+      // Require either several matching terms or one long distinctive term.
+      // A single generic bigram (for example 计算) is not enough evidence.
       const relevant = scored
-        .filter(s => s.score > 0)
+        .filter(s => s.matched.length >= 2 || s.matched.some(token => token.length >= 6))
         .sort((a, b) => b.score - a.score)
         .slice(0, 2);
 
@@ -100,7 +108,7 @@ export class QaService {
     }
 
     // Generate answer from mock patterns or use fallback
-    const answer = this.generateAnswer(question, citations);
+    const answer = this.generateAnswer(question, citations, chunks.length > 0);
 
     const response: QAResponse = {
       answer,
@@ -130,7 +138,7 @@ export class QaService {
     logger.info(SERVICE, 'Q&A history cleared');
   }
 
-  private generateAnswer(question: string, citations: Citation[]): string {
+  private generateAnswer(question: string, citations: Citation[], hasIndexedChunks = false): string {
     // Match against mock patterns
     const questionLower = question.toLowerCase();
     for (const pattern of MOCK_PATTERNS) {
@@ -145,6 +153,10 @@ export class QaService {
     // Fallback answer
     if (citations.length > 0) {
       return `Based on the available documents, the most relevant information comes from "${citations[0].documentTitle}": ${citations[0].excerpt.substring(0, 150)}. However, a more specific answer would require additional context.`;
+    }
+
+    if (hasIndexedChunks) {
+      return 'No indexed content matched this question. Try rephrasing it with terms that appear in the document.';
     }
 
     return 'No relevant documents have been indexed yet. Please import and index documents before asking questions.';

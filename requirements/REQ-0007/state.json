@@ -1,0 +1,50 @@
+{
+  "requirementId": "REQ-0007",
+  "state": "verifying",
+  "risk": "medium",
+  "updatedAt": "2026-11-02T13:52:49.019Z",
+  "history": [
+    {
+      "from": null,
+      "to": "intake",
+      "actor": "openclaw-wechat",
+      "at": "2026-11-02T13:42:43.588Z",
+      "note": "Harness Run created from wechat://T-001"
+    },
+    {
+      "from": "intake",
+      "to": "clarified",
+      "actor": "openclaw-wechat",
+      "at": "2026-11-02T13:47:00.817Z",
+      "note": "contract ready"
+    },
+    {
+      "from": "clarified",
+      "to": "planned",
+      "actor": "openclaw-wechat",
+      "at": "2026-11-02T13:47:01.369Z",
+      "note": "plan ready"
+    },
+    {
+      "from": "planned",
+      "to": "approved",
+      "actor": "feng",
+      "at": "2026-11-02T13:49:36.403Z",
+      "note": "nan approved via wechat, plan v1"
+    },
+    {
+      "from": "approved",
+      "to": "implementing",
+      "actor": "feng",
+      "at": "2026-11-02T13:49:36.965Z",
+      "note": "nan start implementation"
+    },
+    {
+      "from": "implementing",
+      "to": "verifying",
+      "actor": "openclaw-wechat",
+      "at": "2026-11-02T13:52:49.019Z",
+      "note": "retry after env repair"
+    }
+  ]
+}
